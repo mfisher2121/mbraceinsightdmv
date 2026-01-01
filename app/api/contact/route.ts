@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import sgMail from '@sendgrid/mail';
+import { Resend } from 'resend';
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(req: Request) {
   const { name, email, message } = await req.json();
@@ -12,25 +14,22 @@ export async function POST(req: Request) {
     );
   }
 
-  // Check for SendGrid API key
-  const sendGridApiKey = process.env.SENDGRID_API_KEY;
-  if (!sendGridApiKey) {
-    console.error('SENDGRID_API_KEY environment variable is not set');
+  // Check for Resend API key
+  if (!process.env.RESEND_API_KEY) {
+    console.error('RESEND_API_KEY environment variable is not set');
     return NextResponse.json(
       { error: 'Email service is not configured' },
       { status: 500 }
     );
   }
 
-  sgMail.setApiKey(sendGridApiKey);
-
-  const fromEmail = process.env.EMAIL_FROM || 'noreply@mbraceinsight.com';
+  const fromEmail = process.env.EMAIL_FROM || 'onboarding@resend.dev';
 
   try {
-    await sgMail.send({
-      to: 'mfisher@mbraceinsight.com',
+    await resend.emails.send({
       from: fromEmail,
-      replyTo: email, // Allow replying directly to the submitter
+      to: 'mfisher@mbraceinsight.com',
+      replyTo: email,
       subject: `New Contact Form Submission from ${name}`,
       html: `
         <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
@@ -43,34 +42,12 @@ export async function POST(req: Request) {
           </div>
         </div>
       `,
-      text: `New Contact Form Submission\n\nName: ${name}\nEmail: ${email}\n\nMessage:\n${message}`,
     });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    console.error('SendGrid error:', error);
+    console.error('Resend error:', error);
     
-    // Provide more helpful error messages
-    if (error.response) {
-      const { body, statusCode } = error.response;
-      console.error('SendGrid API Error:', statusCode, body);
-      
-      // Common SendGrid errors
-      if (statusCode === 403) {
-        return NextResponse.json(
-          { error: 'Email service authentication failed. Please check API key.' },
-          { status: 500 }
-        );
-      }
-      if (statusCode === 400 && body?.errors) {
-        const errorMessage = body.errors.map((e: any) => e.message).join(', ');
-        return NextResponse.json(
-          { error: `Email validation error: ${errorMessage}` },
-          { status: 400 }
-        );
-      }
-    }
-
     return NextResponse.json(
       { error: 'Failed to send email. Please try again later.' },
       { status: 500 }
