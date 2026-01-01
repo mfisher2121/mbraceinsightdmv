@@ -1,0 +1,204 @@
+{
+  "name": "DMV SEO Audit Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dmv-audit",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [250, 300],
+      "webhookId": "dmv-audit-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate Wisdom Score based on mock data\n// In production, this would use real DataForSEO API results\n\nconst items = $input.all();\nconst item = items[0];\n\nconst { businessName, website, city, serviceType, email } = item.json;\n\n// Mock scoring logic (replace with real DataForSEO analysis)\n// This simulates: GBP Visibility (30%), Organic Visibility (40%), Backlinks (30%)\nconst gbpScore = Math.floor(Math.random() * 30) + 50; // 50-80\nconst organicScore = Math.floor(Math.random() * 40) + 40; // 40-80\nconst backlinkScore = Math.floor(Math.random() * 30) + 45; // 45-75\n\nconst wisdomScore = Math.round((gbpScore * 0.3) + (organicScore * 0.4) + (backlinkScore * 0.3));\n\n// Determine tier\nlet tier = 'Low-Tier';\nif (wisdomScore >= 75) tier = 'Top-Tier';\nelse if (wisdomScore >= 65) tier = 'Mid-High-Tier';\nelse if (wisdomScore >= 55) tier = 'Mid-Tier';\n\nreturn {\n  json: {\n    businessName,\n    website,\n    city,\n    serviceType,\n    email,\n    wisdom_score: wisdomScore,\n    tier,\n    gbpScore,\n    organicScore,\n    backlinkScore,\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "calculate-wisdom-score",
+      "name": "Calculate Wisdom Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [470, 300]
+    },
+    {
+      "parameters": {
+        "resource": "text",
+        "operation": "response",
+        "modelId": {
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "prompt": "=Generate 5 actionable AI SEO quick wins for a {{ $json.serviceType }} business in {{ $json.city }} with a Wisdom Score of {{ $json.wisdom_score }} ({{ $json.tier }}). \n\nThe business is: {{ $json.businessName }}\nWebsite: {{ $json.website }}\n\nFocus on:\n1. Google Business Profile optimization\n2. Local schema markup\n3. Review velocity improvements\n4. Page speed and technical SEO\n5. Local content and landing pages\n\nReturn ONLY a JSON array of exactly 5 quick wins as strings, no additional text:\n[\"Quick Win 1\", \"Quick Win 2\", \"Quick Win 3\", \"Quick Win 4\", \"Quick Win 5\"]",
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 500
+        }
+      },
+      "id": "generate-quick-wins",
+      "name": "Generate Quick Wins (GPT)",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2,
+      "position": [690, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse GPT response and combine with wisdom score data\nconst items = $input.all();\nconst scoreData = items[0].json;\nconst gptResponse = items[1]?.json?.text || items[1]?.json?.response || '';\n\nlet quickWins = [];\ntry {\n  // Try to parse JSON array from GPT response\n  const cleaned = gptResponse.replace(/```json/g, '').replace(/```/g, '').trim();\n  quickWins = JSON.parse(cleaned);\n} catch (e) {\n  // Fallback: extract quick wins from text or use defaults\n  const lines = gptResponse.split('\\n').filter(line => line.trim().match(/^[0-9]+\\.|^-/));\n  quickWins = lines.slice(0, 5).map(line => line.replace(/^[0-9]+\\.\\s*|-\\s*/, '').trim());\n  \n  if (quickWins.length < 5) {\n    quickWins = [\n      'Fix Primary GBP Category',\n      'Increase Review Velocity',\n      'Add LocalBusiness + FAQ Schema',\n      'Improve Page Speed to 70+',\n      'Build City-Specific Landing Pages'\n    ];\n  }\n}\n\nreturn {\n  json: {\n    ...scoreData,\n    quickWins: quickWins.slice(0, 5)\n  }\n};"
+      },
+      "id": "combine-results",
+      "name": "Combine Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [910, 300]
+    },
+    {
+      "parameters": {
+        "resource": "mail",
+        "operation": "send",
+        "fromEmail": "noreply@mbraceinsight.com",
+        "toEmail": "={{ $json.email }}",
+        "subject": "Your DMV SEO Quick Wins Are Ready 🚀",
+        "text": "Hi,\n\nHere are your top 5 AI SEO Quick Wins for {{ $json.businessName }}:\n\n{{ $json.quickWins.map((win, i) => `${i + 1}. ${win}`).join('\\n') }}\n\nWisdom Score: {{ $json.wisdom_score }} ({{ $json.tier }})\n\n{{#if (lt $json.wisdom_score 70)}}\nYou're missing key local visibility signals. Book a strategy call to walk through your 3 fastest fixes:\n{{else}}\nBook your free 15-minute Strategy Call to discuss your results:\n{{/if}}\n\n📅 https://calendly.com/mbraceinsight/strategy-call\n\n— Mbrace Insight",
+        "html": "<html><body style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>\n  <div style='max-width: 600px; margin: 0 auto; padding: 20px;'>\n    <h2 style='color: #2563eb;'>Your DMV SEO Quick Wins Are Ready 🚀</h2>\n    <p>Hi,</p>\n    <p>Here are your <strong>top 5 AI SEO Quick Wins</strong> for <strong>{{ $json.businessName }}</strong>:</p>\n    <ol style='margin-left: 20px;'>\n      {{ $json.quickWins.map((win, i) => `<li style='margin-bottom: 10px;'>${win}</li>`).join('\\n') }}\n    </ol>\n    <div style='background-color: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;'>\n      <p><strong>Wisdom Score:</strong> {{ $json.wisdom_score }} (<strong>{{ $json.tier }}</strong>)</p>\n    </div>\n    {{#if (lt $json.wisdom_score 70)}}\n    <div style='background-color: #fef3c7; padding: 15px; border-left: 4px solid #f59e0b; margin: 20px 0;'>\n      <p><strong>You're missing key local visibility signals.</strong></p>\n      <p>Book a strategy call to walk through your 3 fastest fixes:</p>\n    </div>\n    {{else}}\n    <p>Book your free 15-minute Strategy Call to discuss your results:</p>\n    {{/if}}\n    <a href='https://calendly.com/mbraceinsight/strategy-call' style='display: inline-block; background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0;'>📅 Book Strategy Call</a>\n    <p style='margin-top: 30px; color: #6b7280; font-size: 14px;'>— Mbrace Insight</p>\n  </div>\n</body></html>",
+        "options": {
+          "ccEmail": "mfisher@mbraceinsight.com"
+        }
+      },
+      "id": "send-email",
+      "name": "Send Email (SendGrid)",
+      "type": "n8n-nodes-base.sendGrid",
+      "typeVersion": 1,
+      "position": [1130, 200],
+      "credentials": {
+        "sendGridApi": {
+          "id": "YOUR_SENDGRID_CREDENTIAL_ID",
+          "name": "SendGrid API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "mode": "id",
+          "value": "YOUR_GOOGLE_SHEET_ID"
+        },
+        "sheetName": {
+          "mode": "list",
+          "value": "DMV Audits"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.timestamp }}",
+            "Business": "={{ $json.businessName }}",
+            "Website": "={{ $json.website }}",
+            "City": "={{ $json.city }}",
+            "Industry": "={{ $json.serviceType }}",
+            "Email": "={{ $json.email }}",
+            "Wisdom Score": "={{ $json.wisdom_score }}",
+            "Tier": "={{ $json.tier }}",
+            "Email Sent": "=Yes"
+          }
+        },
+        "options": {}
+      },
+      "id": "log-to-sheets",
+      "name": "Log to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [1130, 400],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "respond-to-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1350, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[
+        {
+          "node": "Calculate Wisdom Score",
+          "type": "main",
+          "index": 0
+        }
+      ]]
+    },
+    "Calculate Wisdom Score": {
+      "main": [[
+        {
+          "node": "Generate Quick Wins (GPT)",
+          "type": "main",
+          "index": 0
+        },
+        {
+          "node": "Combine Results",
+          "type": "main",
+          "index": 0
+        }
+      ]]
+    },
+    "Generate Quick Wins (GPT)": {
+      "main": [[
+        {
+          "node": "Combine Results",
+          "type": "main",
+          "index": 1
+        }
+      ]]
+    },
+    "Combine Results": {
+      "main": [[
+        {
+          "node": "Send Email (SendGrid)",
+          "type": "main",
+          "index": 0
+        },
+        {
+          "node": "Log to Google Sheets",
+          "type": "main",
+          "index": 0
+        },
+        {
+          "node": "Respond to Webhook",
+          "type": "main",
+          "index": 0
+        }
+      ]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}
+
